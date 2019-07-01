@@ -1,0 +1,6 @@
+{
+    "terminal.integrated.env.osx": {
+        "PATH": "/Users/kevinabraham/.platformio/penv/bin:/Users/kevinabraham/.platformio/penv:/Library/Frameworks/Python.framework/Versions/3.7/bin:/Library/Frameworks/Python.framework/Versions/2.7/bin:/Users/kevinabraham/.nvm/versions/node/v10.15.1/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/X11/bin:/Developer/Panda3D/bin:/Applications/Wireshark.app/Contents/MacOS:/Users/kevinabraham/Library/Android/sdk/platform-tools:/Users/kevinabraham/esp/xtensa-esp32-elf/bin",
+        "PLATFORMIO_CALLER": "vscode"
+    }
+}

@@ -1,6 +1,13 @@
 
-# Created by https://www.gitignore.io/api/linux,macos,windows
-# Edit at https://www.gitignore.io/?templates=linux,macos,windows
+# Created by https://www.gitignore.io/api/code,linux,macos,windows,platformio
+# Edit at https://www.gitignore.io/?templates=code,linux,macos,windows,platformio
+
+### Code ###
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
 
 ### Linux ###
 *~
@@ -45,6 +52,12 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
+### PlatformIO ###
+.pioenvs
+.piolibdeps
+.clang_complete
+.gcc-flags.json
+
 ### Windows ###
 # Windows thumbnail cache files
 Thumbs.db
@@ -71,4 +84,4 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
-# End of https://www.gitignore.io/api/linux,macos,windows
+# End of https://www.gitignore.io/api/code,linux,macos,windows,platformio
