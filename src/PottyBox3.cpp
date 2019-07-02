@@ -19,7 +19,8 @@
 // How long to wait after occupancy before turning on exhaust (in milliseconds)?
 #define EXHAUST_ON_WAIT 5000
 
-// How long to wait after de-occupancy before turning off exhaust (in milliseconds)?
+// How long to wait after de-occupancy before turning off exhaust (in
+// milliseconds)?
 #define EXHAUST_OFF_WAIT 60000
 
 // Number of samples to establish touchRead baseline
@@ -59,8 +60,8 @@ uint8_t odorState = 0;  // 0 = exhaust off, unoccupied
                         // 2 = exhaust on, unoccupied
                         // 3 = exhaust on, occupied
 
-elapsedMillis odorTime = 0; // odorState = 1: time since sitting
-                            // odorState = 2: time since leaving
+elapsedMillis odorTime = 0;  // odorState = 1: time since sitting
+                             // odorState = 2: time since leaving
 
 void setup(void) {
   // Get pins low as soon as possible
@@ -207,6 +208,8 @@ uint16_t touch1Value, touch2Value;
 bool touched1, touched2;
 
 void loop(void) {
+  SIM_SRVCOP = 0x55;
+  SIM_SRVCOP = 0xAA;
   delay(100);
 
   /**
@@ -324,10 +327,22 @@ void loop(void) {
     Serial.print(")");
   }
 
-
   Serial.print("\tE: ");
   Serial.print(odorState >> 1);
-#endif
 
   Serial.println();
+#endif
 }
+
+// redefine the startup_early_hook which by default disables the COP
+#ifndef DEBUG
+#ifdef __cplusplus
+extern "C" {
+#endif
+void startup_early_hook() {
+  // empty
+}
+#ifdef __cplusplus
+}
+#endif
+#endif
