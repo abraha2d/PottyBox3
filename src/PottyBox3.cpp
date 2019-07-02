@@ -9,15 +9,38 @@
 #include <i2c_t3.h>
 #include "SparkFun_VL53L1X.h"
 
+/**
+ * Configuration
+ */
+
+// Number of samples to establish touchRead baseline
+#define TOUCH_INIT_NUM_SAMPLES 10
+#define TOUCH_1_THRESHOLD 1.1
+#define TOUCH_2_THRESHOLD 1.5
+
+/**
+ * Pin definitions
+ */
+
 #define SENSOR_1_SHUTDOWN_PIN 2
+
+#define TOUCH_1_PIN 3
+#define TOUCH_2_PIN 4
+
+/**
+ * Global variables
+ */
 
 SFEVL53L1X sensor1(Wire1);      // First sensor, with shutdown pin connected
 SFEVL53L1X *sensor2 = nullptr;  // Second sensor (optional)
 
 bool sensor2Present = false;
 
+uint32_t touch1Threshold = 0, touch2Threshold = 0;
+
 void setup(void) {
   Wire1.begin();
+  Wire1.resetBus();
 
   Serial.begin(115200);
 
@@ -115,21 +138,78 @@ void setup(void) {
     sensor2->setROI(11, 11);
     sensor2->startRanging();
   }
+
+  Serial.println("Calibration touch sensors...");
+
+  Serial.print("Touch 1...  ");
+  for (uint8_t i = 0; i < TOUCH_INIT_NUM_SAMPLES; ++i) {
+    touch1Threshold += touchRead(TOUCH_1_PIN);
+  }
+  touch1Threshold /= TOUCH_INIT_NUM_SAMPLES;
+  Serial.println("Done.");
+
+  Serial.print("Touch 2...  ");
+  for (uint8_t i = 0; i < TOUCH_INIT_NUM_SAMPLES; ++i) {
+    touch2Threshold += touchRead(TOUCH_2_PIN);
+  }
+  touch2Threshold /= TOUCH_INIT_NUM_SAMPLES;
+  Serial.println("Done.");
+
+  Serial.print("Results: Touch 1 = ");
+  Serial.print(touch1Threshold);
+  Serial.print(", Touch 2 = ");
+  Serial.println(touch2Threshold);
+  Serial.println();
+
+  touch1Threshold *= TOUCH_1_THRESHOLD;
+  touch2Threshold *= TOUCH_2_THRESHOLD;
+
+  Serial.println("Starting main loop...");
+  Serial.println();
 }
 
+float sensor1Distance, sensor2Distance;
+uint16_t touch1Value, touch2Value;
+bool touched1, touched2;
+
 void loop(void) {
+  delay(100);
+
+  sensor1Distance = sensor1.getDistance() * 0.0393701;
+
+  if (sensor2) sensor2Distance = sensor2->getDistance() * 0.0393701;
+
+  touch1Value = touchRead(TOUCH_1_PIN);
+  touched1 = touch1Value > touch1Threshold;
+
+  touch2Value = touchRead(TOUCH_2_PIN);
+  touched2 = touch2Value > touch2Threshold;
+
+#ifdef DEBUG
   Serial.print("'");
   Serial.print(sensor1.getRangeStatus());
   Serial.print("' Distance (in): ");
-  Serial.print(sensor1.getDistance() * 0.0393701, 2);
+  Serial.print(sensor1Distance, 2);
 
   if (sensor2) {
     Serial.print("\t'");
     Serial.print(sensor2->getRangeStatus());
     Serial.print("' Distance (in): ");
-    Serial.print(sensor2->getDistance() * 0.0393701, 2);
+    Serial.print(sensor2Distance, 2);
   }
 
+  Serial.print("\tTouch 1: ");
+  Serial.print(touched1);
+  Serial.print(" (");
+  Serial.print(touch1Value);
+  Serial.print(")");
+
+  Serial.print("\tTouch 2: ");
+  Serial.print(touched2);
+  Serial.print(" (");
+  Serial.print(touch2Value);
+  Serial.print(")");
+#endif
+
   Serial.println();
-  delay(100);
 }
