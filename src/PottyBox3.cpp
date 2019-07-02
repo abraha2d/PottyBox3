@@ -3,23 +3,29 @@
   By: Kevin Abraham
 */
 
+#define DEBUG
+
 #include <Arduino.h>
 #include <i2c_t3.h>
 #include "SparkFun_VL53L1X.h"
 
 #define SENSOR_1_SHUTDOWN_PIN 2
 
-SFEVL53L1X sensor1(Wire1);  // First sensor, with shutdown pin connected
-SFEVL53L1X* sensor2 = nullptr;  // Second sensor (optional)
+SFEVL53L1X sensor1(Wire1);      // First sensor, with shutdown pin connected
+SFEVL53L1X *sensor2 = nullptr;  // Second sensor (optional)
 
 bool sensor2Present = false;
 
-void setup(void)
-{
-
+void setup(void) {
   Wire1.begin();
 
   Serial.begin(115200);
+
+#ifdef DEBUG
+  while (!Serial)
+    ;
+#endif
+
   Serial.println();
   Serial.println("┌──────────────────┐");
   Serial.println("│     PottyBox3    │");
@@ -34,7 +40,7 @@ void setup(void)
   byte count = 0;
   for (byte i = 0x08; i < 0x78; i++) {
     Wire1.beginTransmission(i);
-    if (Wire1.endTransmission () == 0) {
+    if (Wire1.endTransmission() == 0) {
       Serial.print("Found sensor at address 0x");
       Serial.println(i, HEX);
       count++;
@@ -43,11 +49,14 @@ void setup(void)
   }
   Serial.print("Done. Found ");
   Serial.print(count, DEC);
-  Serial.println(" sensor(s).");
+  if (count == 1) {
+    Serial.println(" sensor.");
+  } else {
+    Serial.println(" sensors.");
+  }
   Serial.println();
 
   if (count == 1) {
-
     // Shut down sensor 1
     Serial.print("Shutting down sensor 1...               ");
     pinMode(SENSOR_1_SHUTDOWN_PIN, OUTPUT);
@@ -59,7 +68,7 @@ void setup(void)
     count = 0;
     for (byte i = 0x08; i < 0x78; i++) {
       Wire1.beginTransmission(i);
-      if (Wire1.endTransmission () == 0) {
+      if (Wire1.endTransmission() == 0) {
         count++;
         delay(1);
       }
@@ -72,15 +81,15 @@ void setup(void)
 
       // Initialize sensor 2
       Serial.print("Initializing sensor 2...                ");
-      while(!sensor2->checkBootState());
+      while (!sensor2->checkBootState())
+        ;
       sensor2->begin();
       Serial.println("Done.");
 
       // Change sensor 2's I2C address
-      Serial.print("Assigning address 0x2A to sensor 2...   ");
+      Serial.print("Setting sensor 2's address to 0x2A...   ");
       sensor2->setI2CAddress(0x54);
       Serial.println("Done.");
-
     } else {
       Serial.println("Fail.");
     }
@@ -88,17 +97,13 @@ void setup(void)
     // Bring sensor 1 online
     Serial.print("Bringing sensor 1 back online...        ");
     pinMode(SENSOR_1_SHUTDOWN_PIN, INPUT);
-    Serial.println("Done.");
-
-    // Initialize sensor 1
-    Serial.print("Initializing sensor 1...                ");
-    while(!sensor1.checkBootState());
+    while (!sensor1.checkBootState())
+      ;
     sensor1.begin();
     Serial.println("Done.");
 
     Serial.println("Sensor initialization complete.");
     Serial.println();
-
   } else if (count == 2) {
     sensor2 = new SFEVL53L1X(Wire1, 0x54);
     sensor2Present = true;
@@ -110,11 +115,9 @@ void setup(void)
     sensor2->setROI(11, 11);
     sensor2->startRanging();
   }
-
 }
 
-void loop(void)
-{
+void loop(void) {
   Serial.print("'");
   Serial.print(sensor1.getRangeStatus());
   Serial.print("' Distance (in): ");
