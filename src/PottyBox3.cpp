@@ -3,8 +3,6 @@
   By: Kevin Abraham
 */
 
-#define DEBUG
-
 #include <Arduino.h>
 #include <i2c_t3.h>
 #include "SparkFun_VL53L1X.h"
