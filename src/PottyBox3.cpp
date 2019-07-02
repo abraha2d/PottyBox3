@@ -59,8 +59,8 @@ uint8_t odorState = 0;  // 0 = exhaust off, unoccupied
                         // 2 = exhaust on, unoccupied
                         // 3 = exhaust on, occupied
 
-uint32_t odorTime = 0;  // odorState = 1: time of sitting
-                        // odorState = 2: time of leaving
+elapsedMillis odorTime = 0; // odorState = 1: time since sitting
+                            // odorState = 2: time since leaving
 
 void setup(void) {
   // Get pins low as soon as possible
@@ -236,7 +236,7 @@ void loop(void) {
       // Exhaust off, unoccupied
       if (occupied1 || occupied2) {
         odorState = 1;
-        odorTime = millis();
+        odorTime = 0;
       }
       break;
 
@@ -245,7 +245,7 @@ void loop(void) {
       if (!occupied1 && !occupied2) {
         odorState = 0;
       }
-      if (millis() - odorTime > EXHAUST_ON_WAIT) {
+      if (odorTime > EXHAUST_ON_WAIT) {
         odorState = 3;
       }
       break;
@@ -254,7 +254,7 @@ void loop(void) {
       // Exhaust on, occupied
       if (!occupied1 && !occupied2) {
         odorState = 2;
-        odorTime = millis();
+        odorTime = 0;
       }
       break;
 
@@ -263,7 +263,7 @@ void loop(void) {
       if (occupied1 || occupied2) {
         odorState = 3;
       }
-      if (millis() - odorTime > EXHAUST_OFF_WAIT) {
+      if (odorTime > EXHAUST_OFF_WAIT) {
         odorState = 0;
       }
       break;
@@ -320,7 +320,7 @@ void loop(void) {
   Serial.print(odorState);
   if (__builtin_popcount(odorState) == 1) {
     Serial.print(" (");
-    Serial.print(millis() - odorTime);
+    Serial.print(odorTime);
     Serial.print(")");
   }
 
