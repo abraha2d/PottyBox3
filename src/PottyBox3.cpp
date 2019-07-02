@@ -13,15 +13,17 @@
  * Configuration
  */
 
-// Threshold to determine if toilet is occupied (in inches)
-#define SENSOR_THRESHOLD 20
+// Minimum signal threshold (kcps)
+#define SENSOR_CAL_SIGNAL_THRESHOLD 250
 
-// How long to wait after occupancy before turning on exhaust (in milliseconds)?
-#define EXHAUST_ON_WAIT 5000
+// Threshold to determine if toilet is occupied (inches)
+#define SENSOR_THRESHOLD 15
 
-// How long to wait after de-occupancy before turning off exhaust (in
-// milliseconds)?
-#define EXHAUST_OFF_WAIT 60000
+// How long to wait after occupancy before turning on exhaust (milliseconds)?
+#define EXHAUST_ON_WAIT 2500
+
+// How long to wait after leaving before turning off exhaust (milliseconds)?
+#define EXHAUST_OFF_WAIT 30000
 
 // Number of samples to establish touchRead baseline
 #define TOUCH_INIT_NUM_SAMPLES 10
@@ -78,7 +80,8 @@ void setup(void) {
   Serial.begin(115200);
 
 #ifdef DEBUG
-  while (!Serial)
+  elapsedMillis serialTimeout;
+  while (!Serial && serialTimeout < 1000)
     ;
 #endif
 
@@ -165,10 +168,14 @@ void setup(void) {
     sensor2Present = true;
   }
 
-  sensor1.setROI(11, 11);
+  sensor1.setDistanceModeShort();
+  sensor1.setROI(4, 4);
+  delay(100);
   sensor1.startRanging();
   if (sensor2) {
-    sensor2->setROI(11, 11);
+    sensor2->setDistanceModeShort();
+    sensor2->setROI(4, 4);
+    delay(100);
     sensor2->startRanging();
   }
 
@@ -217,11 +224,13 @@ void loop(void) {
    */
 
   sensor1Distance = sensor1.getDistance() * 0.0393701;
-  occupied1 = sensor1Distance < SENSOR_THRESHOLD;
+  occupied1 = sensor1Distance < SENSOR_THRESHOLD &&
+              sensor1.getSignalPerSpad() > SENSOR_CAL_SIGNAL_THRESHOLD;
 
   if (sensor2) {
     sensor2Distance = sensor2->getDistance() * 0.0393701;
-    occupied2 = sensor2Distance < SENSOR_THRESHOLD;
+    occupied2 = sensor2Distance < SENSOR_THRESHOLD &&
+                sensor2->getSignalPerSpad() > SENSOR_CAL_SIGNAL_THRESHOLD;
   }
 
   touch1Value = touchRead(TOUCH_1_PIN);
@@ -297,14 +306,18 @@ void loop(void) {
   Serial.print(occupied1);
   Serial.print(" (");
   Serial.print(sensor1Distance, 0);
-  Serial.print(" in)");
+  Serial.print(" in, ");
+  Serial.print(sensor1.getSignalPerSpad());
+  Serial.print(")");
 
   if (sensor2) {
     Serial.print("\tS2: ");
     Serial.print(occupied2);
     Serial.print(" (");
     Serial.print(sensor2Distance, 0);
-    Serial.print(" in)");
+    Serial.print(" in, ");
+    Serial.print(sensor2->getSignalPerSpad());
+    Serial.print(")");
   }
 
   Serial.print("\tT1: ");
