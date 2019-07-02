@@ -13,14 +13,30 @@
  * Configuration
  */
 
+// Threshold to determine if toilet is occupied (in inches)
+#define SENSOR_THRESHOLD 20
+
+// How long to wait after occupancy before turning on exhaust (in milliseconds)?
+#define EXHAUST_ON_WAIT 5000
+
+// How long to wait after de-occupancy before turning off exhaust (in milliseconds)?
+#define EXHAUST_OFF_WAIT 60000
+
 // Number of samples to establish touchRead baseline
 #define TOUCH_INIT_NUM_SAMPLES 10
-#define TOUCH_1_THRESHOLD 1.1
+
+// How much higher should reading be above baseline to count as a touch?
+#define TOUCH_1_THRESHOLD 1.05
 #define TOUCH_2_THRESHOLD 1.5
 
 /**
  * Pin definitions
  */
+
+#define EXHAUST_PIN 21
+
+#define FLUSH_1_PIN 16
+#define FLUSH_2_PIN 17
 
 #define SENSOR_1_SHUTDOWN_PIN 2
 
@@ -38,7 +54,23 @@ bool sensor2Present = false;
 
 uint32_t touch1Threshold = 0, touch2Threshold = 0;
 
+uint8_t odorState = 0;  // 0 = exhaust off, unoccupied
+                        // 1 = exhaust off, occupied
+                        // 2 = exhaust on, unoccupied
+                        // 3 = exhaust on, occupied
+
+uint32_t odorTime = 0;  // odorState = 1: time of sitting
+                        // odorState = 2: time of leaving
+
 void setup(void) {
+  // Get pins low as soon as possible
+  pinMode(EXHAUST_PIN, OUTPUT);
+  digitalWrite(EXHAUST_PIN, LOW);
+  pinMode(FLUSH_1_PIN, OUTPUT);
+  digitalWrite(FLUSH_1_PIN, LOW);
+  pinMode(FLUSH_2_PIN, OUTPUT);
+  digitalWrite(FLUSH_2_PIN, LOW);
+
   Wire1.begin();
   Wire1.resetBus();
 
@@ -169,15 +201,25 @@ void setup(void) {
 }
 
 float sensor1Distance, sensor2Distance;
+bool occupied1, occupied2;
+
 uint16_t touch1Value, touch2Value;
 bool touched1, touched2;
 
 void loop(void) {
   delay(100);
 
-  sensor1Distance = sensor1.getDistance() * 0.0393701;
+  /**
+   * Data acquisition
+   */
 
-  if (sensor2) sensor2Distance = sensor2->getDistance() * 0.0393701;
+  sensor1Distance = sensor1.getDistance() * 0.0393701;
+  occupied1 = sensor1Distance < SENSOR_THRESHOLD;
+
+  if (sensor2) {
+    sensor2Distance = sensor2->getDistance() * 0.0393701;
+    occupied2 = sensor2Distance < SENSOR_THRESHOLD;
+  }
 
   touch1Value = touchRead(TOUCH_1_PIN);
   touched1 = touch1Value > touch1Threshold;
@@ -185,30 +227,106 @@ void loop(void) {
   touch2Value = touchRead(TOUCH_2_PIN);
   touched2 = touch2Value > touch2Threshold;
 
-#ifdef DEBUG
-  Serial.print("'");
-  Serial.print(sensor1.getRangeStatus());
-  Serial.print("' Distance (in): ");
-  Serial.print(sensor1Distance, 2);
+  /**
+   * State machine
+   */
 
-  if (sensor2) {
-    Serial.print("\t'");
-    Serial.print(sensor2->getRangeStatus());
-    Serial.print("' Distance (in): ");
-    Serial.print(sensor2Distance, 2);
+  switch (odorState) {
+    case 0:
+      // Exhaust off, unoccupied
+      if (occupied1 || occupied2) {
+        odorState = 1;
+        odorTime = millis();
+      }
+      break;
+
+    case 1:
+      // Exhaust off, occupied
+      if (!occupied1 && !occupied2) {
+        odorState = 0;
+      }
+      if (millis() - odorTime > EXHAUST_ON_WAIT) {
+        odorState = 3;
+      }
+      break;
+
+    case 3:
+      // Exhaust on, occupied
+      if (!occupied1 && !occupied2) {
+        odorState = 2;
+        odorTime = millis();
+      }
+      break;
+
+    case 2:
+      // Exhaust on, unoccupied
+      if (occupied1 || occupied2) {
+        odorState = 3;
+      }
+      if (millis() - odorTime > EXHAUST_OFF_WAIT) {
+        odorState = 0;
+      }
+      break;
+
+    default:
+      Serial.print("WARNING: Unknown odorState ");
+      Serial.print(odorState);
+      Serial.println("! Resetting to 0...");
+      odorState = 0;
+      odorTime = 0;
+      break;
   }
 
-  Serial.print("\tTouch 1: ");
+  /**
+   * Output activation
+   */
+
+  digitalWrite(EXHAUST_PIN, odorState >> 1);
+  digitalWrite(FLUSH_1_PIN, touched1);
+  digitalWrite(FLUSH_2_PIN, touched2);
+
+  /**
+   * Debug
+   */
+
+#ifdef DEBUG
+  Serial.print("S1: ");
+  Serial.print(occupied1);
+  Serial.print(" (");
+  Serial.print(sensor1Distance, 0);
+  Serial.print(" in)");
+
+  if (sensor2) {
+    Serial.print("\tS2: ");
+    Serial.print(occupied2);
+    Serial.print(" (");
+    Serial.print(sensor2Distance, 0);
+    Serial.print(" in)");
+  }
+
+  Serial.print("\tT1: ");
   Serial.print(touched1);
   Serial.print(" (");
   Serial.print(touch1Value);
   Serial.print(")");
 
-  Serial.print("\tTouch 2: ");
+  Serial.print("\tT2: ");
   Serial.print(touched2);
   Serial.print(" (");
   Serial.print(touch2Value);
   Serial.print(")");
+
+  Serial.print("\tState: ");
+  Serial.print(odorState);
+  if (__builtin_popcount(odorState) == 1) {
+    Serial.print(" (");
+    Serial.print(millis() - odorTime);
+    Serial.print(")");
+  }
+
+
+  Serial.print("\tE: ");
+  Serial.print(odorState >> 1);
 #endif
 
   Serial.println();
