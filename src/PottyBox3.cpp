@@ -12,7 +12,7 @@
  */
 
 // Minimum signal threshold (kcps)
-#define SENSOR_CAL_SIGNAL_THRESHOLD 250
+#define SENSOR_CAL_SIGNAL_THRESHOLD 5000
 
 // Threshold to determine if toilet is occupied (inches)
 #define SENSOR_THRESHOLD 15
@@ -72,10 +72,7 @@ void setup(void) {
   pinMode(FLUSH_2_PIN, OUTPUT);
   digitalWrite(FLUSH_2_PIN, LOW);
 
-  pinMode(SENSOR_1_SHUTDOWN_PIN, OUTPUT);
-  digitalWrite(SENSOR_1_SHUTDOWN_PIN, LOW);
-  delay(100);
-  digitalWrite(SENSOR_1_SHUTDOWN_PIN, HIGH);
+  pinMode(SENSOR_1_SHUTDOWN_PIN, INPUT);
 
   Wire1.begin();
   Wire1.resetBus();
@@ -121,7 +118,9 @@ void setup(void) {
   if (count == 1) {
     // Shut down sensor 1
     Serial.print("Shutting down sensor 1...               ");
+    pinMode(SENSOR_1_SHUTDOWN_PIN, OUTPUT);
     digitalWrite(SENSOR_1_SHUTDOWN_PIN, LOW);
+    delay(10);
     Serial.println("Done.");
 
     // Initiate scan for more sensors
@@ -157,7 +156,7 @@ void setup(void) {
 
     // Bring sensor 1 online
     Serial.print("Bringing sensor 1 back online...        ");
-    digitalWrite(SENSOR_1_SHUTDOWN_PIN, HIGH);
+    pinMode(SENSOR_1_SHUTDOWN_PIN, INPUT);
     while (!sensor1.checkBootState())
       ;
     sensor1.begin();
@@ -166,18 +165,21 @@ void setup(void) {
     Serial.println("Sensor initialization complete.");
     Serial.println();
   } else if (count == 2) {
+    while (!sensor1.checkBootState())
+      ;
+    sensor1.begin();
     sensor2 = new SFEVL53L1X(Wire1, 0x54);
-    sensor2Present = true;
+    while (!sensor2->checkBootState())
+      ;
+    sensor2->begin();
   }
 
-  sensor1.setDistanceModeLong();
   sensor1.setROI(4, 4);
-  delay(100);
+  delay(10);
   sensor1.startRanging();
   if (sensor2) {
-    sensor2->setDistanceModeLong();
     sensor2->setROI(4, 4);
-    delay(100);
+    delay(10);
     sensor2->startRanging();
   }
 
@@ -227,12 +229,12 @@ void loop(void) {
 
   sensor1Distance = sensor1.getDistance() * 0.0393701;
   occupied1 = sensor1Distance < SENSOR_THRESHOLD &&
-              sensor1.getSignalPerSpad() > SENSOR_CAL_SIGNAL_THRESHOLD;
+              sensor1.getSignalRate() > SENSOR_CAL_SIGNAL_THRESHOLD;
 
   if (sensor2) {
     sensor2Distance = sensor2->getDistance() * 0.0393701;
     occupied2 = sensor2Distance < SENSOR_THRESHOLD &&
-                sensor2->getSignalPerSpad() > SENSOR_CAL_SIGNAL_THRESHOLD;
+                sensor2->getSignalRate() > SENSOR_CAL_SIGNAL_THRESHOLD;
   }
 
   touch1Value = touchRead(TOUCH_1_PIN);
@@ -309,7 +311,7 @@ void loop(void) {
   Serial.print(" (");
   Serial.print(sensor1Distance, 0);
   Serial.print(" in, ");
-  Serial.print(sensor1.getSignalPerSpad());
+  Serial.print(sensor1.getSignalRate());
   Serial.print(")");
 
   if (sensor2) {
@@ -318,7 +320,7 @@ void loop(void) {
     Serial.print(" (");
     Serial.print(sensor2Distance, 0);
     Serial.print(" in, ");
-    Serial.print(sensor2->getSignalPerSpad());
+    Serial.print(sensor2->getSignalRate());
     Serial.print(")");
   }
 
