@@ -72,6 +72,11 @@ void setup(void) {
   pinMode(FLUSH_2_PIN, OUTPUT);
   digitalWrite(FLUSH_2_PIN, LOW);
 
+  pinMode(SENSOR_1_SHUTDOWN_PIN, OUTPUT);
+  digitalWrite(SENSOR_1_SHUTDOWN_PIN, LOW);
+  delay(100);
+  digitalWrite(SENSOR_1_SHUTDOWN_PIN, HIGH);
+
   Wire1.begin();
   Wire1.resetBus();
 
@@ -116,7 +121,6 @@ void setup(void) {
   if (count == 1) {
     // Shut down sensor 1
     Serial.print("Shutting down sensor 1...               ");
-    pinMode(SENSOR_1_SHUTDOWN_PIN, OUTPUT);
     digitalWrite(SENSOR_1_SHUTDOWN_PIN, LOW);
     Serial.println("Done.");
 
@@ -153,7 +157,7 @@ void setup(void) {
 
     // Bring sensor 1 online
     Serial.print("Bringing sensor 1 back online...        ");
-    pinMode(SENSOR_1_SHUTDOWN_PIN, INPUT);
+    digitalWrite(SENSOR_1_SHUTDOWN_PIN, HIGH);
     while (!sensor1.checkBootState())
       ;
     sensor1.begin();
@@ -166,12 +170,12 @@ void setup(void) {
     sensor2Present = true;
   }
 
-  sensor1.setDistanceModeShort();
+  sensor1.setDistanceModeLong();
   sensor1.setROI(4, 4);
   delay(100);
   sensor1.startRanging();
   if (sensor2) {
-    sensor2->setDistanceModeShort();
+    sensor2->setDistanceModeLong();
     sensor2->setROI(4, 4);
     delay(100);
     sensor2->startRanging();
