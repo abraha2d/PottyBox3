@@ -11,17 +11,20 @@
  * Configuration
  */
 
-// Minimum signal threshold (kcps)
-#define SENSOR_CAL_SIGNAL_THRESHOLD 5000
+// Minimum signal threshold (kcps/SPAD)
+#define SENSOR_CAL_SIGNAL_THRESHOLD 500
 
 // Threshold to determine if toilet is occupied (inches)
-#define SENSOR_THRESHOLD 15
+#define SENSOR_THRESHOLD 17.5
 
-// How long to wait after occupancy before turning on exhaust (milliseconds)?
-#define EXHAUST_ON_WAIT 2500
+// Length of status history to determine malfunction
+#define STATUS_HIST_LEN 8
+
+// How long to wait after occupancy before delaying turn off (milliseconds)?
+#define EXHAUST_DELAY_THRESHOLD 15000
 
 // How long to wait after leaving before turning off exhaust (milliseconds)?
-#define EXHAUST_OFF_WAIT 30000
+#define EXHAUST_DELAY_TIME 30000
 
 // Number of samples to establish touchRead baseline
 #define TOUCH_INIT_NUM_SAMPLES 10
@@ -81,8 +84,10 @@ void setup(void) {
 
 #ifdef DEBUG
   elapsedMillis serialTimeout;
-  while (!Serial && serialTimeout < 1000)
-    ;
+  while (!Serial && serialTimeout < 5000) {
+    SIM_SRVCOP = 0x55;
+    SIM_SRVCOP = 0xAA;
+  }
 #endif
 
   Serial.println();
@@ -141,8 +146,6 @@ void setup(void) {
 
       // Initialize sensor 2
       Serial.print("Initializing sensor 2...                ");
-      while (!sensor2->checkBootState())
-        ;
       sensor2->begin();
       Serial.println("Done.");
 
@@ -157,33 +160,29 @@ void setup(void) {
     // Bring sensor 1 online
     Serial.print("Bringing sensor 1 back online...        ");
     pinMode(SENSOR_1_SHUTDOWN_PIN, INPUT);
-    while (!sensor1.checkBootState())
-      ;
     sensor1.begin();
     Serial.println("Done.");
 
     Serial.println("Sensor initialization complete.");
     Serial.println();
   } else if (count == 2) {
-    while (!sensor1.checkBootState())
-      ;
     sensor1.begin();
     sensor2 = new SFEVL53L1X(Wire1, 0x54);
-    while (!sensor2->checkBootState())
-      ;
     sensor2->begin();
   }
 
   sensor1.setROI(4, 4);
+  sensor1.setTimingBudgetInMs(500);
   delay(10);
   sensor1.startRanging();
   if (sensor2) {
     sensor2->setROI(4, 4);
+    sensor2->setTimingBudgetInMs(500);
     delay(10);
     sensor2->startRanging();
   }
 
-  Serial.println("Calibration touch sensors...");
+  Serial.println("Calibrating touch sensors...");
 
   Serial.print("Touch 1...  ");
   for (uint8_t i = 0; i < TOUCH_INIT_NUM_SAMPLES; ++i) {
@@ -215,13 +214,16 @@ void setup(void) {
 float sensor1Distance, sensor2Distance;
 bool occupied1, occupied2;
 
+uint8_t status1[STATUS_HIST_LEN] = {0, 0, 0, 0};
+uint8_t status2[STATUS_HIST_LEN] = {0, 0, 0, 0};
+
 uint16_t touch1Value, touch2Value;
 bool touched1, touched2;
 
 void loop(void) {
   SIM_SRVCOP = 0x55;
   SIM_SRVCOP = 0xAA;
-  delay(100);
+  delay(500);
 
   /**
    * Data acquisition
@@ -229,12 +231,42 @@ void loop(void) {
 
   sensor1Distance = sensor1.getDistance() * 0.0393701;
   occupied1 = sensor1Distance < SENSOR_THRESHOLD &&
-              sensor1.getSignalRate() > SENSOR_CAL_SIGNAL_THRESHOLD;
+              sensor1.getSignalPerSpad() > SENSOR_CAL_SIGNAL_THRESHOLD;
+
+  bool nonZeroStatus1 = true;
+  for (uint8_t i = 0; i < STATUS_HIST_LEN; ++i) {
+    nonZeroStatus1 = nonZeroStatus1 && status1[i] != 0 && status1[i] != 2;
+  }
+  if (nonZeroStatus1) {
+    Serial.println("FATAL: Multiple non-zero range statuses for sensor 1...");
+    pinMode(SENSOR_1_SHUTDOWN_PIN, OUTPUT);
+    digitalWrite(SENSOR_1_SHUTDOWN_PIN, LOW);
+    delay(10000);
+  }
+  for (uint8_t i = STATUS_HIST_LEN - 1; i > 0; --i) {
+    status1[i] = status1[i - 1];
+  }
+  status1[0] = sensor1.getRangeStatus();
 
   if (sensor2) {
     sensor2Distance = sensor2->getDistance() * 0.0393701;
     occupied2 = sensor2Distance < SENSOR_THRESHOLD &&
-                sensor2->getSignalRate() > SENSOR_CAL_SIGNAL_THRESHOLD;
+                sensor2->getSignalPerSpad() > SENSOR_CAL_SIGNAL_THRESHOLD;
+
+    bool nonZeroStatus2 = true;
+    for (uint8_t i = 0; i < STATUS_HIST_LEN; ++i) {
+      nonZeroStatus2 = nonZeroStatus2 && status2[i] != 0 && status2[i] != 2;
+    }
+    if (nonZeroStatus2) {
+      Serial.println("FATAL: Multiple non-zero range statuses for sensor 2...");
+      pinMode(SENSOR_1_SHUTDOWN_PIN, OUTPUT);
+      digitalWrite(SENSOR_1_SHUTDOWN_PIN, LOW);
+      delay(10000);
+    }
+    for (uint8_t i = STATUS_HIST_LEN - 1; i > 0; --i) {
+      status2[i] = status2[i - 1];
+    }
+    status2[0] = sensor2->getRangeStatus();
   }
 
   touch1Value = touchRead(TOUCH_1_PIN);
@@ -251,26 +283,26 @@ void loop(void) {
     case 0:
       // Exhaust off, unoccupied
       if (occupied1 || occupied2) {
-        odorState = 1;
+        odorState = 3;
         odorTime = 0;
       }
       break;
 
     case 1:
       // Exhaust off, occupied
-      if (!occupied1 && !occupied2) {
-        odorState = 0;
-      }
-      if (odorTime > EXHAUST_ON_WAIT) {
-        odorState = 3;
-      }
+      odorState = 3;
+      odorTime = 0;
       break;
 
     case 3:
       // Exhaust on, occupied
       if (!occupied1 && !occupied2) {
-        odorState = 2;
-        odorTime = 0;
+        if (odorTime < EXHAUST_DELAY_THRESHOLD) {
+          odorState = 0;
+        } else {
+          odorState = 2;
+          odorTime = 0;
+        }
       }
       break;
 
@@ -279,7 +311,7 @@ void loop(void) {
       if (occupied1 || occupied2) {
         odorState = 3;
       }
-      if (odorTime > EXHAUST_OFF_WAIT) {
+      if (odorTime > EXHAUST_DELAY_TIME) {
         odorState = 0;
       }
       break;
@@ -311,8 +343,15 @@ void loop(void) {
   Serial.print(" (");
   Serial.print(sensor1Distance, 0);
   Serial.print(" in, ");
-  Serial.print(sensor1.getSignalRate());
-  Serial.print(")");
+  Serial.print(sensor1.getSignalPerSpad());
+  Serial.print(", {");
+  for (uint8_t i = 0; i < STATUS_HIST_LEN; ++i) {
+    Serial.print(status1[i]);
+    if (i != STATUS_HIST_LEN - 1) {
+      Serial.print(", ");
+    }
+  }
+  Serial.print("})");
 
   if (sensor2) {
     Serial.print("\tS2: ");
@@ -320,8 +359,15 @@ void loop(void) {
     Serial.print(" (");
     Serial.print(sensor2Distance, 0);
     Serial.print(" in, ");
-    Serial.print(sensor2->getSignalRate());
-    Serial.print(")");
+    Serial.print(sensor2->getSignalPerSpad());
+    Serial.print(", {");
+    for (uint8_t i = 0; i < STATUS_HIST_LEN; ++i) {
+      Serial.print(status2[i]);
+      if (i != STATUS_HIST_LEN - 1) {
+        Serial.print(", ");
+      }
+    }
+    Serial.print("})");
   }
 
   Serial.print("\tT1: ");
@@ -352,7 +398,6 @@ void loop(void) {
 }
 
 // redefine the startup_early_hook which by default disables the COP
-#ifndef DEBUG
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -361,5 +406,4 @@ void startup_early_hook() {
 }
 #ifdef __cplusplus
 }
-#endif
 #endif
