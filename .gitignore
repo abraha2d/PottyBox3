@@ -53,8 +53,7 @@ Temporary Items
 .apdisk
 
 ### PlatformIO ###
-.pioenvs
-.piolibdeps
+.pio
 .clang_complete
 .gcc-flags.json
 
