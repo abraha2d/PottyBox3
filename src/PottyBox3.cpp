@@ -51,10 +51,8 @@
  * Global variables
  */
 
-SFEVL53L1X sensor1(Wire1);      // First sensor, with shutdown pin connected
+SFEVL53L1X *sensor1 = nullptr;  // First sensor, with shutdown pin connected
 SFEVL53L1X *sensor2 = nullptr;  // Second sensor (optional)
-
-bool sensor2Present = false;
 
 uint32_t touch1Threshold = 0, touch2Threshold = 0;
 
@@ -104,7 +102,7 @@ void setup(void) {
   byte count = 0;
   for (byte i = 0x08; i < 0x78; i++) {
     Wire1.beginTransmission(i);
-    if (Wire1.endTransmission() == 0) {
+    if (Wire1.endTransmission(I2C_STOP, 10000) == 0) {
       Serial.print("Found sensor at address 0x");
       Serial.println(i, HEX);
       count++;
@@ -141,7 +139,6 @@ void setup(void) {
 
     if (count == 1) {
       sensor2 = new SFEVL53L1X(Wire1);
-      sensor2Present = true;
       Serial.println("Done.");
 
       // Initialize sensor 2
@@ -160,21 +157,25 @@ void setup(void) {
     // Bring sensor 1 online
     Serial.print("Bringing sensor 1 back online...        ");
     pinMode(SENSOR_1_SHUTDOWN_PIN, INPUT);
-    sensor1.begin();
+    sensor1 = new SFEVL53L1X(Wire1);
+    sensor1->begin();
     Serial.println("Done.");
 
     Serial.println("Sensor initialization complete.");
     Serial.println();
   } else if (count == 2) {
-    sensor1.begin();
+    sensor1 = new SFEVL53L1X(Wire1);
+    sensor1->begin();
     sensor2 = new SFEVL53L1X(Wire1, 0x54);
     sensor2->begin();
   }
 
-  sensor1.setROI(4, 4);
-  sensor1.setTimingBudgetInMs(500);
-  delay(10);
-  sensor1.startRanging();
+  if (sensor1) {
+    sensor1->setROI(4, 4);
+    sensor1->setTimingBudgetInMs(500);
+    delay(10);
+    sensor1->startRanging();
+  }
   if (sensor2) {
     sensor2->setROI(4, 4);
     sensor2->setTimingBudgetInMs(500);
@@ -229,24 +230,26 @@ void loop(void) {
    * Data acquisition
    */
 
-  sensor1Distance = sensor1.getDistance() * 0.0393701;
-  occupied1 = sensor1Distance < SENSOR_THRESHOLD &&
-              sensor1.getSignalPerSpad() > SENSOR_CAL_SIGNAL_THRESHOLD;
+  if (sensor1) {
+    sensor1Distance = sensor1->getDistance() * 0.0393701;
+    occupied1 = sensor1Distance < SENSOR_THRESHOLD &&
+                sensor1->getSignalPerSpad() > SENSOR_CAL_SIGNAL_THRESHOLD;
 
-  bool nonZeroStatus1 = true;
-  for (uint8_t i = 0; i < STATUS_HIST_LEN; ++i) {
-    nonZeroStatus1 = nonZeroStatus1 && status1[i] != 0 && status1[i] != 2;
+    bool nonZeroStatus1 = true;
+    for (uint8_t i = 0; i < STATUS_HIST_LEN; ++i) {
+      nonZeroStatus1 = nonZeroStatus1 && status1[i] != 0 && status1[i] != 2;
+    }
+    if (nonZeroStatus1) {
+      Serial.println("FATAL: Multiple non-zero range statuses for sensor 1...");
+      pinMode(SENSOR_1_SHUTDOWN_PIN, OUTPUT);
+      digitalWrite(SENSOR_1_SHUTDOWN_PIN, LOW);
+      delay(10000);
+    }
+    for (uint8_t i = STATUS_HIST_LEN - 1; i > 0; --i) {
+      status1[i] = status1[i - 1];
+    }
+    status1[0] = sensor1->getRangeStatus();
   }
-  if (nonZeroStatus1) {
-    Serial.println("FATAL: Multiple non-zero range statuses for sensor 1...");
-    pinMode(SENSOR_1_SHUTDOWN_PIN, OUTPUT);
-    digitalWrite(SENSOR_1_SHUTDOWN_PIN, LOW);
-    delay(10000);
-  }
-  for (uint8_t i = STATUS_HIST_LEN - 1; i > 0; --i) {
-    status1[i] = status1[i - 1];
-  }
-  status1[0] = sensor1.getRangeStatus();
 
   if (sensor2) {
     sensor2Distance = sensor2->getDistance() * 0.0393701;
@@ -338,20 +341,22 @@ void loop(void) {
    */
 
 #ifdef DEBUG
-  Serial.print("S1: ");
-  Serial.print(occupied1);
-  Serial.print(" (");
-  Serial.print(sensor1Distance, 0);
-  Serial.print(" in, ");
-  Serial.print(sensor1.getSignalPerSpad());
-  Serial.print(", {");
-  for (uint8_t i = 0; i < STATUS_HIST_LEN; ++i) {
-    Serial.print(status1[i]);
-    if (i != STATUS_HIST_LEN - 1) {
-      Serial.print(", ");
+  if (sensor1) {
+    Serial.print("S1: ");
+    Serial.print(occupied1);
+    Serial.print(" (");
+    Serial.print(sensor1Distance, 0);
+    Serial.print(" in, ");
+    Serial.print(sensor1->getSignalPerSpad());
+    Serial.print(", {");
+    for (uint8_t i = 0; i < STATUS_HIST_LEN; ++i) {
+      Serial.print(status1[i]);
+      if (i != STATUS_HIST_LEN - 1) {
+        Serial.print(", ");
+      }
     }
+    Serial.print("})");
   }
-  Serial.print("})");
 
   if (sensor2) {
     Serial.print("\tS2: ");
